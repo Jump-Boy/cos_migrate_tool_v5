@@ -1,10 +1,12 @@
 package com.qcloud.cos_migrate_tool.config;
 
 import java.io.File;
-
 import com.qcloud.cos.model.StorageClass;
 import com.qcloud.cos_migrate_tool.utils.PathUtils;
 import com.qcloud.cos_migrate_tool.utils.SystemUtils;
+import org.joda.time.DateTime;
+import org.joda.time.format.DateTimeFormat;
+import org.joda.time.format.DateTimeFormatter;
 
 /**
  * @author chengwu 定义common配置, 比如tempfile, COS的账户信息
@@ -28,8 +30,14 @@ public class CommonConfig {
     private long smallFileThreshold = 5 * 1024 * 1024;
     private boolean damonMode = false;
     private long damonInterVal = 60;
-    private int timeWindowBegin = 0;
-    private int timeWindowEnd = 24;
+    /**
+     * todo 默认当天00:00
+     */
+    private DateTime timeWindowBegin = null;
+    /**
+     * todo 默认当天23:59
+     */
+    private DateTime timeWindowEnd = null;
     private String endpointSuffix = null;
     private String cosProxyHost = "";
     private int cosProxyPort = -1;
@@ -360,47 +368,24 @@ public class CommonConfig {
         timeWindowStr = timeWindowStr.trim();
         String[] timeWindowArray = timeWindowStr.split(",");
         if (timeWindowArray.length != 2) {
-            throw new IllegalArgumentException("executeTimeWindow is invalid, the legal example 03:30,21:00");
+            throw new IllegalArgumentException("executeTimeWindow is invalid, the legal example 2021-05-14 00:00,2021-05-14 23:59");
         }
         try {
-            String[] timeBeginMemberArray = timeWindowArray[0].split(":");
-            if (timeBeginMemberArray.length != 2) {
-                throw new IllegalArgumentException("executeTimeWindow is invalid, the legal example 03:30,21:00");
-            }
-            int hour = Integer.valueOf(timeBeginMemberArray[0]);
-            if (hour < 0 || hour >= 24) {
-                throw new IllegalArgumentException("executeTimeWindow is invalid, the legal example 03:30,21:00");
-            }
-            int minute = Integer.valueOf(timeBeginMemberArray[1]);
-            if (minute < 0 || minute >= 60) {
-                throw new IllegalArgumentException("executeTimeWindow is invalid, the legal example 03:30,21:00");
-            }
-            this.timeWindowBegin = hour * 60 + minute;
-            
-            String[] timeEndMemberArray = timeWindowArray[1].split(":");
-            if (timeEndMemberArray.length != 2) {
-                throw new IllegalArgumentException("executeTimeWindow is invalid, the legal example 03:30,21:00");
-            }
-            hour = Integer.valueOf(timeEndMemberArray[0]);
-            if (hour < 0 || hour > 24) {
-                throw new IllegalArgumentException("executeTimeWindow is invalid, the legal example 03:30,21:00");
-            }
-            minute = Integer.valueOf(timeEndMemberArray[1]);
-            if (minute < 0 || minute >= 60) {
-                throw new IllegalArgumentException("executeTimeWindow is invalid, the legal example 03:30,21:00");
-            }
-            this.timeWindowEnd = hour * 60 + minute;
+            DateTimeFormatter formatter = DateTimeFormat.forPattern("yyyy-MM-dd HH:mm");
+
+            this.timeWindowBegin = DateTime.parse(timeWindowArray[0], formatter);
+            this.timeWindowEnd = DateTime.parse(timeWindowArray[1], formatter);
             
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("invalid executeTimeWindow");
         }
     }
 
-    public int getTimeWindowBegin() {
+    public DateTime getTimeWindowBegin() {
         return timeWindowBegin;
     }
 
-    public int getTimeWindowEnd() {
+    public DateTime getTimeWindowEnd() {
         return timeWindowEnd;
     }
     

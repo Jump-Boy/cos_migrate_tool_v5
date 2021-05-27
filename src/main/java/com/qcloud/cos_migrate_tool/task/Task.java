@@ -1,9 +1,19 @@
 package com.qcloud.cos_migrate_tool.task;
 
 import java.io.ByteArrayInputStream;
+import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadLocalRandom;
+
+import org.joda.time.DateTime;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.qcloud.cos.exception.CosServiceException;
 import com.qcloud.cos.model.AccessControlList;
@@ -19,15 +29,11 @@ import com.qcloud.cos.transfer.TransferProgress;
 import com.qcloud.cos.transfer.Upload;
 import com.qcloud.cos.utils.Md5Utils;
 import com.qcloud.cos_migrate_tool.config.CommonConfig;
+import com.qcloud.cos_migrate_tool.config.ConfigParser;
 import com.qcloud.cos_migrate_tool.config.MigrateType;
-import com.qcloud.cos_migrate_tool.record.MigrateCompetitorRecordElement;
 import com.qcloud.cos_migrate_tool.record.RecordDb;
 import com.qcloud.cos_migrate_tool.record.RecordDb.QUERY_RESULT;
 import com.qcloud.cos_migrate_tool.record.RecordElement;
-
-import org.joda.time.DateTime;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public abstract class Task implements Runnable {
     private Semaphore semaphore;
@@ -299,21 +305,34 @@ public abstract class Task implements Runnable {
 
     public abstract void doTask();
 
-    private void checkTimeWindows() throws InterruptedException {
-        int timeWindowBegin = config.getTimeWindowBegin();
-        int timeWindowEnd = config.getTimeWindowEnd();
+    // todo 修改，将小时分钟改成具体datatime，支持判断具体某天某个时间点，即允许跨天逻辑
+    /**
+     * 如果小于开始时间，则睡眠等待；开始时间至结束时间内的，return true，正常执行；结束时间后的，config false并停止周期执行
+     *
+     * @return
+     * @throws InterruptedException
+     */
+    private boolean checkTimeWindows() throws InterruptedException {
+        DateTime timeWindowBegin = config.getTimeWindowBegin();
+        DateTime timeWindowEnd = config.getTimeWindowEnd();
         while (true) {
-            DateTime dateTime = DateTime.now();
-            int minuteOfDay = dateTime.getMinuteOfDay();
-            if (minuteOfDay >= timeWindowBegin && minuteOfDay <= timeWindowEnd) {
-                return;
+            DateTime now = DateTime.now();
+
+            if (now.compareTo(timeWindowBegin) >= 0 && now.compareTo(timeWindowEnd) <= 0) {
+                return true;
+            } else if (now.compareTo(timeWindowEnd) > 0) {
+                // App.main中会根据damonMode判断是否周期执行，置为false，则下次不再执行，任务结束。
+                CommonConfig config = ConfigParser.instance.getConfig();
+                if (config.isDamonMode()) {
+                    config.setDaemonMode("off");
+                }
+                return false;
             }
 
             if (mutex.tryAcquire()) {
                 String printTips = String.format(
-                        "currentTime %s, wait next time window [%02d:%02d, %02d:%02d]",
-                        dateTime.toString("yyyy-MM-dd HH:mm:ss"), timeWindowBegin / 60,
-                        timeWindowBegin % 60, timeWindowEnd / 60, timeWindowEnd % 60);
+                        "currentTime %s, wait next time window", now.toString("yyyy-MM-dd HH:mm:ss")
+                );
                 System.out.println(printTips);
                 System.out.println(
                         "---------------------------------------------------------------------");
@@ -328,8 +347,10 @@ public abstract class Task implements Runnable {
 
     public void run() {
         try {
-            checkTimeWindows();
-            doTask();
+            // 判断是否在窗口时间区间内，超过结束时间的，则不doTask
+            if (checkTimeWindows()) {
+                doTask();
+            }
         } catch (InterruptedException e) {
             log.error("task is interrupted", e);
         } catch (Exception e) {

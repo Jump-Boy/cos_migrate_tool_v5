@@ -127,6 +127,7 @@ public class App {
                 TaskStatics.instance.reset();
 
                 TaskExecutor taskExecutor = buildTaskExecutor(config);
+                // 所有池中task run完成才会执行下一行
                 taskExecutor.run();
                 taskExecutor.waitTaskOver();
 
